@@ -1,0 +1,13 @@
+dataset_name: gsm8k
+train_file: data/processed/gsm8k_train.jsonl
+validation_file: data/processed/gsm8k_valid.jsonl
+test_file: data/processed/gsm8k_test.jsonl
+input_fields:
+  - question
+output_field: answer
+prompt_template: "You are a helpful math tutor. Solve the word problem step by step and give the final answer.\nProblem: {{question}}\nSolution:"
+answer_template: "{{answer}}"
+max_source_length: 1024
+max_target_length: 256
+shuffle: true
+num_proc: 4

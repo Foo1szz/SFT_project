@@ -1,0 +1,12 @@
+datasets:
+  - math
+  - gsm8k
+max_new_tokens: 512
+temperature: 0.0
+top_p: 1.0
+top_k: 50
+batch_size: 4
+use_cot_prompt: true
+write_predictions: true
+metrics:
+  - accuracy

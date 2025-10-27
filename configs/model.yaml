@@ -1,0 +1,11 @@
+model_name: meta-llama/Llama-2-7b-hf
+# Optional override tokenizer. If omitted, model tokenizer is used.
+tokenizer_name: null
+dtype: bfloat16
+trust_remote_code: false
+use_flash_attention_2: false
+max_position_embeddings: 4096
+pad_token: "<pad>"
+# Additional keyword arguments passed to from_pretrained.
+model_kwargs:
+  low_cpu_mem_usage: true

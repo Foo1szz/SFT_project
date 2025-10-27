@@ -1,0 +1,13 @@
+dataset_name: math
+train_file: data/processed/math_train.jsonl
+validation_file: data/processed/math_valid.jsonl
+test_file: data/processed/math_test.jsonl
+input_fields:
+  - question
+output_field: answer
+prompt_template: "Solve the following math problem and provide the final answer.\nQuestion: {{question}}\nAnswer:"
+answer_template: "{{answer}}"
+max_source_length: 2048
+max_target_length: 512
+shuffle: true
+num_proc: 4
