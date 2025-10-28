@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "4, 5, 6, 7"
 import random
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -171,7 +173,7 @@ def generate_attention_maps(
     dev = torch.device(device) if device else _auto_device()
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True)
+    model = AutoModelForCausalLM.from_pretrained(model_path, trust_remote_code=True, attn_implementation="eager")
     model.to(dev)
     model.eval()
 
@@ -234,8 +236,8 @@ def generate_attention_maps(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate attention heatmaps for sampled MATH-500 queries.")
-    parser.add_argument("--model-path", type=str, required=True, help="Path to HF model (local dir)")
-    parser.add_argument("--data-file", type=str, required=True, help="Path to MATH-500 test.jsonl")
+    parser.add_argument("--model-path", type=str, default="/mnt/sharedata/ssd_large/common/LLMs/deepseek-math-7b-rl", help="Path to HF model (local dir)")
+    parser.add_argument("--data-file", type=str, default="/mnt/sharedata/ssd_large/common/datasets/MATH-500/test.jsonl", help="Path to MATH-500 test.jsonl")
     parser.add_argument(
         "--output-dir",
         type=str,
