@@ -4,10 +4,12 @@ import json
 import math
 import os
 import random
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import torch
+import matplotlib.pyplot as plt
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -135,6 +137,68 @@ def _metrics_from_attn_vector(p: torch.Tensor, k_values: Iterable[int]) -> Dict[
     return out
 
 
+def _render_layer_bar_charts(
+    base_out: Path,
+    per_layer_metrics: Dict[int, Dict[int, Dict[str, List[float]]]],
+    chosen_layers: List[int],
+    k_values: Tuple[int, ...],
+) -> None:
+    if 10 not in k_values:
+        raise ValueError("Cannot generate mean_top10 charts because k_values does not include 10.")
+
+    plot_dir = base_out / "plots"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    levels = [1, 2, 3, 4, 5]
+    padded_layers = list(chosen_layers)
+    while len(padded_layers) < 6 and padded_layers:
+        padded_layers.append(padded_layers[-1])
+    if len(padded_layers) < 6:
+        # Fallback if chosen_layers was empty for some reason.
+        padded_layers = [0, 1, 2, 3, 4, 5]
+
+    layer_groups = [
+        ("early", padded_layers[0:2]),
+        ("middle", padded_layers[2:4]),
+        ("late", padded_layers[4:6]),
+    ]
+
+    for group_name, layers in layer_groups:
+        for slot_idx, layer_idx in enumerate(layers, start=1):
+            layer_level_metrics = per_layer_metrics.get(layer_idx)
+            if not layer_level_metrics:
+                continue
+
+            mean_entropy: List[float] = []
+            mean_top10: List[float] = []
+
+            for lvl in levels:
+                metrics_for_level = layer_level_metrics.get(lvl, {})
+                ent_list = metrics_for_level.get("entropy", [])
+                top10_list = metrics_for_level.get("top10", [])
+                ent_mean = float(sum(ent_list) / len(ent_list)) if ent_list else float("nan")
+                top10_mean = float(sum(top10_list) / len(top10_list)) if top10_list else float("nan")
+                mean_entropy.append(ent_mean)
+                mean_top10.append(top10_mean)
+
+            indices = list(range(len(levels)))
+            width = 0.35
+            fig, ax = plt.subplots(figsize=(8, 4))
+            ax.bar([i - width / 2 for i in indices], mean_entropy, width=width, label="mean_entropy")
+            ax.bar([i + width / 2 for i in indices], mean_top10, width=width, label="mean_top10")
+            ax.set_xticks(indices)
+            ax.set_xticklabels([str(lvl) for lvl in levels])
+            ax.set_xlabel("Level")
+            ax.set_ylabel("Value")
+            ax.set_title(f"{group_name.capitalize()} #{slot_idx} | layer {layer_idx}")
+            ax.legend()
+            fig.tight_layout()
+
+            out_path = plot_dir / f"layer_{layer_idx}_{group_name}_slot{slot_idx}_metrics.png"
+            fig.savefig(out_path)
+            plt.close(fig)
+
+
 def _forward_last_token_attn(model, inputs: Dict[str, torch.Tensor]) -> Tuple[List[torch.Tensor], int]:
     with torch.no_grad():
         outputs = model(**inputs, output_attentions=True, use_cache=False, return_dict=True)
@@ -192,6 +256,9 @@ def compute_attention_stats(
 
         # For aggregate summary across levels
         level_agg: Dict[int, List[Dict[str, Any]]] = {}
+        per_layer_level_metrics: Optional[Dict[int, Dict[int, Dict[str, List[float]]]]] = (
+            defaultdict(lambda: defaultdict(lambda: defaultdict(list))) if pass_name == "full" else None
+        )
 
         for level in sorted(by_level.keys()):
             pool = [r for r in by_level[level] if _get_query(r)]
@@ -278,10 +345,15 @@ def compute_attention_stats(
                         "entropy": m["entropy"],
                         "entropy_norm": m["entropy_norm"],
                     }
-                for k in k_values:
-                    row[f"top{k}"] = m[f"top{k}"]
-                    row[f"top{k}_pct"] = m[f"top{k}_pct"]
-                details_rows.append(row)
+                    for k in k_values:
+                        row[f"top{k}"] = m[f"top{k}"]
+                        row[f"top{k}_pct"] = m[f"top{k}_pct"]
+                    details_rows.append(row)
+
+                    if per_layer_level_metrics is not None:
+                        per_layer_level_metrics[li][level]["entropy"].append(m["entropy"])
+                        if 10 in k_values:
+                            per_layer_level_metrics[li][level]["top10"].append(m["top10"])
 
             # Write per-level details CSV
             level_dir = base_out / f"level_{level}"
@@ -330,6 +402,9 @@ def compute_attention_stats(
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
                 writer.writerows(agg_rows)
+
+        if per_layer_level_metrics:
+            _render_layer_bar_charts(base_out, per_layer_level_metrics, chosen_layers, k_values)
 
     # Determine pick counts based on analysis mode
     sizes = {lvl: len([r for r in by_level[lvl] if _get_query(r)]) for lvl in by_level}
